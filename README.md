@@ -2,7 +2,7 @@
 
 <p align="center">
     <picture align="center">
-    <img src="https://github.com/survey-genomics/subclust/src/subclust/assets/logo_shine%405x.png" width="100px">
+    <img src="https://github.com/survey-genomics/survey/blob/fd7d0a6787c0499e25813a062ac954a8a333fe65/assets/logo_shine@5x.png?raw=true" width="100px">
     </picture>
 </p>
 <p align="center">
