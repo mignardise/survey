@@ -554,20 +554,15 @@ def cellmap(mdata: md.MuData,
     """
     
 
-    def _add_cells(masked_mdata, color, ax, cmap, norm, dtypes, basis, layer, **kwargs):
-        if dtypes['color']['type'] == 'cat':
-            cats_show = masked_mdata[dtypes['color']['mod']].obs[color].unique()
-        else:
-            cats_show = None
-
+    def _add_cells(masked_mdata, color, subset, ax, cmap, norm, dtypes, basis, layer, **kwargs):
         if 'legend_params' in kwargs:
             if 'pos' in kwargs['legend_params']:
-                default_legend_params = {'pos': 'BR1', 'show_all_cats': cats_show}
+                default_legend_params = {'pos': 'BR1'}
             else:
-                default_legend_params = {'loc': 'lower right', 'bbox_to_anchor': (1, 0), 'show_all_cats': cats_show}
+                default_legend_params = {'loc': 'lower right', 'bbox_to_anchor': (1, 0)}
             kwargs['legend_params'] = get_config(kwargs['legend_params'], default_legend_params)
 
-        supplied_scatter_params = ['data', 'color', 'basis', 'ax', 'plot_data', 'layer']
+        supplied_scatter_params = ['data', 'color', 'subset', 'basis', 'ax', 'plot_data', 'layer']
         # overlap_with_mpl_scatter = ['cmap', 'norm', ''] # what's with the empty string?
         overlap_with_mpl_scatter = ['cmap', 'norm'] 
 
@@ -576,8 +571,8 @@ def cellmap(mdata: md.MuData,
 
         mpl_scatter_params = {'cmap': cmap, 'norm': norm}
 
-        ax = scatter(data=masked_mdata, color=color, basis=basis, ax=ax, plot_data=None, layer=layer,
-                     **scatter_params, **mpl_scatter_params)
+        ax = scatter(data=masked_mdata, color=color, subset=subset, basis=basis, ax=ax,
+                     plot_data=None, layer=layer, **scatter_params, **mpl_scatter_params)
 
 
         return ax
@@ -600,7 +595,7 @@ def cellmap(mdata: md.MuData,
         # Still choosing to leave the units param here for consistency with other spatial plotting functions
         raise NotImplementedError("Only units='m' is currently supported in cellmap().")
     
-    chip, masked_mdata = get_chip_mdata(mdata, chipnum, subset=subset)
+    chip, masked_mdata = get_chip_mdata(mdata, chipnum)
     
     # Get Axes object and set limits
     if ax is None:
@@ -627,7 +622,7 @@ def cellmap(mdata: md.MuData,
     elif dtypes['color']['type'] is None:
         color = 'k'
 
-    ax = _add_cells(masked_mdata, color, ax, cmap, norm, dtypes, basis, layer, **kwargs)
+    ax = _add_cells(masked_mdata, color, subset, ax, cmap, norm, dtypes, basis, layer, **kwargs)
     
     return ax
 

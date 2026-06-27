@@ -19,7 +19,7 @@ import scanpy as sc
 import mudata as md
 
 # Survey libs
-from survey.genutils import is_listlike, get_config
+from survey.genutils import is_listlike, get_config, get_mask
 from survey.genplot import subplots
 from survey.singlecell.scutils import freq_table, get_color_mapper
 from survey.singlecell.datatypes import determine_data
@@ -198,7 +198,12 @@ def get_plot_data(data: Union[sc.AnnData, md.MuData],
             # Store `color` because we may need it to sort later
             color_series = adata.obs[color].copy()
             plot_df['color'] = color_series.reindex(plot_df.index)
-            cdict = get_cat_dict(adata, color, 'color')
+            full_cdict = get_cat_dict(adata, color, 'color')
+            cdict = {
+                cat: full_cdict[cat]
+                for cat in adata.obs[color].cat.categories
+                if cat in full_cdict
+            }
             plot_df['c'] = plot_df['color'].map(cdict)
 
         elif color_type == 'named':
@@ -297,6 +302,70 @@ def get_plot_data(data: Union[sc.AnnData, md.MuData],
     return plot_df, dtypes, cdict
 
 
+def _subset_plot_data(data: Union[sc.AnnData, md.MuData],
+                      subset: Optional[Dict],
+                      mod: Optional[str] = None) -> Union[sc.AnnData, md.MuData]:
+    """Subset an AnnData or MuData object before extracting plotting data."""
+    if subset is None:
+        return data
+    if not isinstance(subset, dict):
+        raise TypeError("subset must be a dictionary mapping observation columns to values.")
+
+    normalized_subset = {
+        key: values if is_listlike(values) else [values]
+        for key, values in subset.items()
+    }
+
+    if isinstance(data, sc.AnnData):
+        missing = set(normalized_subset).difference(data.obs.columns)
+        if missing:
+            raise KeyError(f"Subset columns not found in adata.obs: {sorted(missing)}")
+        mask = get_mask(data.obs, normalized_subset)
+    elif isinstance(data, md.MuData):
+        subset_df = pd.DataFrame(index=data.obs_names)
+
+        for key in normalized_subset:
+            if key in data.obs.columns:
+                subset_df[key] = data.obs[key]
+                continue
+
+            candidates = []
+            if isinstance(key, str) and ':' in key:
+                key_mod, obs_key = key.split(':', 1)
+                if key_mod in data.mod and obs_key in data[key_mod].obs.columns:
+                    candidates.append((key_mod, obs_key))
+            else:
+                if mod is not None and mod in data.mod and key in data[mod].obs.columns:
+                    candidates.append((mod, key))
+                else:
+                    candidates.extend(
+                        (mod_name, key)
+                        for mod_name in data.mod
+                        if key in data[mod_name].obs.columns
+                    )
+
+            if len(candidates) == 0:
+                raise KeyError(f"Subset column '{key}' not found in mdata.obs or any modality.")
+            if len(candidates) > 1:
+                mods = [mod_name for mod_name, _ in candidates]
+                raise ValueError(
+                    f"Subset column '{key}' is present in multiple modalities: {mods}. "
+                    "Use a modality-qualified key such as 'rna:column'."
+                )
+
+            key_mod, obs_key = candidates[0]
+            subset_df[key] = data[key_mod].obs[obs_key].reindex(data.obs_names)
+
+        mask = get_mask(subset_df, normalized_subset)
+    else:
+        raise TypeError("data must be an AnnData or MuData object.")
+
+    if mask.sum() == 0:
+        raise ValueError("The subset provided results in zero cells. Please check the subset criteria.")
+
+    return data[mask.to_numpy()]
+
+
 def scatter(data: Union[sc.AnnData, md.MuData],
             color: Optional[str] = None,
             layer: Optional[str] = None,
@@ -317,6 +386,7 @@ def scatter(data: Union[sc.AnnData, md.MuData],
             legend_params: Optional[Dict] = None,
             lims: Optional[Tuple[Tuple[float, float], Tuple[float, float]]] = None,
             invert: bool = None,
+            subset: Optional[Dict] = None,
             **kwargs) -> plt.Axes:
     """
     Creates a scatter plot from single-cell data, typically an embedding.
@@ -366,6 +436,11 @@ def scatter(data: Union[sc.AnnData, md.MuData],
         A tuple `((x_min, x_max), (y_min, y_max))` to set plot limits.
     invert : bool, optional
         If True, sets the plot background to black.
+    subset : dict, optional
+        Observation filters applied by slicing the AnnData or MuData object
+        before plotting. MuData keys may be global columns, unambiguous
+        modality-local columns, or modality-qualified keys such as
+        ``"rna:high_q"``.
     **kwargs
         Additional keyword arguments passed to `matplotlib.pyplot.scatter`.
 
@@ -410,11 +485,14 @@ def scatter(data: Union[sc.AnnData, md.MuData],
     )
 
     if plot_data is not None: # in case its already been computed
+        if subset is not None:
+            raise ValueError("subset cannot be used together with pre-computed plot_data.")
         if not isinstance(plot_data, tuple) or len(plot_data) != 3:
             raise ValueError("plot_data must be a tuple of (plot_df, dtypes, cdict).")
         # Maybe add some more checks here?
         plot_df, dtypes, cdict = plot_data
     else:
+        data = _subset_plot_data(data, subset, mod=mod)
         plot_df, dtypes, cdict = get_plot_data(data, mod, color, basis, components, size, scale, layer, sort_order)
 
     color_type = dtypes['color']['type']
@@ -1528,4 +1606,3 @@ class Ridge:
         ax.set_xlabel(self.x)
 
         return fig, axes
-
